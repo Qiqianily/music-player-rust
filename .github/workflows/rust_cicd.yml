@@ -147,7 +147,7 @@ jobs:
           submodules: recursive
 
       - name: 📜 Generate changelog
-        uses: orhun/git-cliff-action@v7
+        uses: orhun/git-cliff-action@v4
         id: git_cliff
         with:
           config: cliff.toml

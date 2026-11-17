@@ -114,23 +114,56 @@ jobs:
 
       # ✅ 把二进制重命名为「BINARY-平台[.exe]」放到 dist/ 下
       #    这样三个平台的产物文件名不会冲突，Release 里一眼可辨
-      - name: 📦 Stage binary with platform suffix
+      # - name: 📦 Stage binary with platform suffix
+      #   shell: bash
+      #   run: |
+      #     mkdir -p dist
+      #     src="target/release/${{ env.BINARY }}"
+      #     if [ -f "${src}.exe" ]; then
+      #       # Windows 平台
+      #       cp "${src}.exe" "dist/${{ env.BINARY }}-${{ matrix.platform }}.exe"
+      #     else
+      #       # Linux / macOS 平台
+      #       cp "$src" "dist/${{ env.BINARY }}-${{ matrix.platform }}"
+      #     fi
+      #     echo "--- staged files ---"
+      #     ls -l dist/
+
+      - name: 📦 Package binary
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist
-          src="target/release/${{ env.BINARY }}"
-          if [ -f "${src}.exe" ]; then
-            # Windows 平台
-            cp "${src}.exe" "dist/${{ env.BINARY }}-${{ matrix.platform }}.exe"
+
+          # 精确指定源文件，不用通配符，避免 .pdb/.d/.dSYM 混入
+          if [ -f "target/release/${{ env.BINARY }}.exe" ]; then
+            src="target/release/${{ env.BINARY }}.exe"
+            bin="${{ env.BINARY }}.exe"
           else
-            # Linux / macOS 平台
-            cp "$src" "dist/${{ env.BINARY }}-${{ matrix.platform }}"
+            src="target/release/${{ env.BINARY }}"
+            bin="${{ env.BINARY }}"
           fi
+
+          [ -f "$src" ] || { echo "binary not found: $src"; exit 1; }
+
+          cp "$src" "dist/$bin"
+
+          # 按 runner.os 决定后缀，打包到 dist/ 内
+          case "${{ runner.os }}" in
+            Windows)  suffix="windows" ;;
+            macOS)    suffix="macos" ;;
+            Linux)    suffix="linux" ;;
+            *)        echo "unknown OS"; exit 1 ;;
+          esac
+
+          tar -czf "dist/${{ env.BINARY }}-${suffix}.tar.gz" -C dist "$bin"
+          rm "dist/$bin"   # 只想发压缩包就删裸文件；想两个都发就注释掉
+
           echo "--- staged files ---"
-          ls -l dist/
+          ls -lh dist/
 
       - name: 📁 Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BINARY }}-${{ matrix.platform }}
           path: dist/

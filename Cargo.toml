@@ -8,4 +8,8 @@ rust-version = "1.100.0"
 license = "MIT"
 repository = "https://github.com/Qiqianily/music-player-rust.git"
 
+[[bin]]
+name="player"
+path="src/main.rs"
+
 [dependencies]

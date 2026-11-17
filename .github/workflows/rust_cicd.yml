@@ -15,8 +15,15 @@ on:
 permissions:
   contents: read
 
+# ✅ 统一在这里定义二进制名，所有 job 通过 ${{ env.BINARY }} 引用
+#    ⚠️ 必须与 Cargo.toml 中 [package].name 或 [[bin]].name 完全一致
+env:
+  BINARY: player
+
 jobs:
-  #   Job 1: Lint 检查（格式、静态分析）
+  # ============================================================
+  # Job 1: Lint 检查（格式、静态分析）
+  # ============================================================
   lint:
     name: 🤖 Lint Check
     runs-on: ubuntu-latest
@@ -42,7 +49,9 @@ jobs:
   #      - name: 🔍 Audit dependencies for vulnerabilities
   #        run: cargo audit
 
-  # Job 2: 测试执行（并生成覆盖率报告）
+  # ============================================================
+  # Job 2: 测试执行
+  # ============================================================
   test:
     name: 🧪 Run Tests
     runs-on: ${{ matrix.platform }}
@@ -78,7 +87,9 @@ jobs:
     #        with:
     #          file: ./lcov.info
 
+    # ============================================================
     # Job 3: 构建二进制文件（带缓存和多平台支持）
+    # ============================================================
   build:
     name: 🚀 Build Binary
     runs-on: ${{ matrix.platform }}
@@ -101,11 +112,30 @@ jobs:
       - name: 🏗️ Build release binary
         run: cargo build --release
 
+      # ✅ 把二进制重命名为「BINARY-平台[.exe]」放到 dist/ 下
+      #    这样三个平台的产物文件名不会冲突，Release 里一眼可辨
+      - name: 📦 Stage binary with platform suffix
+        shell: bash
+        run: |
+          mkdir -p dist
+          src="target/release/${{ env.BINARY }}"
+          if [ -f "${src}.exe" ]; then
+            # Windows 平台
+            cp "${src}.exe" "dist/${{ env.BINARY }}-${{ matrix.platform }}.exe"
+          else
+            # Linux / macOS 平台
+            cp "$src" "dist/${{ env.BINARY }}-${{ matrix.platform }}"
+          fi
+          echo "--- staged files ---"
+          ls -l dist/
+
       - name: 📁 Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: my-app-${{ matrix.platform }}
-          path: target/release/my-app*
+          name: ${{ env.BINARY }}-${{ matrix.platform }}
+          path: dist/
+          # 如果 BINARY 配错、文件不存在，直接报错而不是静默成功
+          if-no-files-found: error
 
     # Job 4: 文档构建与部署（docs.rs 风格）
   #  docs:
@@ -130,7 +160,9 @@ jobs:
   #            github_token: ${{ secrets.GITHUB_TOKEN }}
   #            publish_dir: ./target/doc
 
+  # ============================================================
   # Job 5: 发布版本（当打 tag 时触发）
+  # ============================================================
   release:
     name: 🚀 Create GitHub Release
     needs: [test, lint]
@@ -160,20 +192,31 @@ jobs:
         with:
           path: artifacts/
 
-      - name: 📦 Prepare release assets
-        # 添加 CHANGES.md 到 release-assets/
-        # cp CHANGES.md release-assets/
+      # ✅ 新增：打包包含 submodule 的完整源码
+      #    排除 .git、target、dist 等无关/体积大的目录
+      - name: 📚 Package full source (with submodules)
         run: |
-          mkdir -p release-assets
-          cp artifacts/*/*.zip release-assets/ || true
+          mkdir -p artifacts/source
+          tar -czf "artifacts/source/${{ env.BINARY }}-${{ github.ref_name }}-source.tar.gz" \
+            --exclude='./.git' \
+            --exclude='./target' \
+            --exclude='./dist' \
+            --exclude='./artifacts' \
+            -C "${{ github.workspace }}" .
+
+      - name: 📋 List downloaded assets
+        run: |
+          echo "--- release assets ---"
+          find artifacts -type f -exec ls -l {} \;
 
       - name: 📦 Upload release to GitHub
         uses: softprops/action-gh-release@v3
         with:
           # 发布标题为 tag 名
           body: ${{ steps.git_cliff.outputs.content }}
+          # 递归匹配 artifacts 下所有文件，直接作为 Release 资产
           files: |
-            release-assets/*
+            artifacts/**/*
 
   # Job 6: Slack 通知（失败时触发）
 #  notify:
